@@ -241,7 +241,8 @@ export default function App() {
   };
 
   return (
-    <div className={`flex h-screen w-screen overflow-hidden ${ui.bg} font-sans`}>
+    // FIXED INSET-0 ADDED HERE: This forces the app to pin to the exact edges of the screen, bypassing Vite's default CSS margins.
+    <div className={`fixed inset-0 flex overflow-hidden ${ui.bg} font-sans`}>
       {/* 1. LEFT NAVIGATION - FIXED WIDTH */}
       <nav className={`w-20 flex-shrink-0 flex flex-col items-center py-6 border-r ${ui.card}`}>
         <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center mb-8 shadow-lg shadow-emerald-900/20">
