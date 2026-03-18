@@ -13,14 +13,14 @@ import {
   PackageOpen, 
   Moon, 
   Sun,
-  Upload,
-  Loader2,
   CheckCircle2,
   TrendingUp,
-  Banknote
+  Banknote,
+  QrCode,
+  Printer
 } from 'lucide-react';
 
-// --- FIXED CONFIGURATION (Fixes the "Offline" issue on Vercel) ---
+// --- FIXED CONFIGURATION ---
 const myFirebaseConfig = {
   apiKey: "AIzaSyAtKfJtMhNwy8A7dqOp4tPcKyja980RPMk",
   authDomain: "juicebarpos-9fa74.firebaseapp.com",
@@ -59,12 +59,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // --- WA CHECKOUT STATES ---
-  const [address, setAddress] = useState('');
-  const [attachment, setAttachment] = useState(null);
-  const [refId, setRefId] = useState('');
-  const [isScanning, setIsScanning] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  // --- PAYMENT STATES ---
+  const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash' or 'upi'
 
   const ui = {
     bg: isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900',
@@ -112,60 +108,6 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const pendingOrdersCount = orders.filter(o => o.status === 'pending').length;
 
-  // --- OCR & FILE UPLOAD LOGIC ---
-  const apiKey = ""; 
-
-  const extractRefId = async (base64Data, mimeType) => {
-    setIsScanning(true);
-    setErrorMsg('');
-    let delay = 1000;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-    
-    const payload = {
-      contents: [{
-        role: "user",
-        parts: [
-          { text: "Extract the reference ID or transaction ID from this payment screenshot. Return ONLY the alphanumeric ID string. If none found, return 'NO_ID_FOUND'." },
-          { inlineData: { mimeType: mimeType, data: base64Data } }
-        ]
-      }]
-    };
-
-    for (let i = 0; i < 5; i++) {
-      try {
-        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NO_ID_FOUND";
-        setRefId(text);
-        setIsScanning(false);
-        return;
-      } catch (err) {
-        if (i === 4) {
-           setRefId("Scan Failed");
-           setErrorMsg("Failed to extract Ref ID automatically. You can manually enter it in WA.");
-           setIsScanning(false);
-        } else {
-           await new Promise(r => setTimeout(r, delay));
-           delay *= 2;
-        }
-      }
-    }
-  };
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result;
-      setAttachment(result);
-      const base64Data = result.split(',')[1];
-      extractRefId(base64Data, file.type);
-    };
-    reader.readAsDataURL(file);
-  };
-
   // --- GOOGLE SHEETS SYNC LOGIC ---
   const syncToSheets = async (order, action = 'create') => {
     if (!GOOGLE_SCRIPT_URL) return;
@@ -184,14 +126,87 @@ export default function App() {
     } catch (e) { console.error("Sheet sync failed", e); }
   };
 
-  // --- WHATSAPP CHECKOUT LOGIC ---
+  // --- POS PRINT RECEIPT LOGIC ---
+  const printReceipt = (orderId, cartItems, total, method) => {
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
+    if (!printWindow) return;
+
+    const receiptHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Print Receipt - ${orderId}</title>
+          <style>
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              padding: 20px; 
+              text-align: center; 
+              width: 300px; /* Standard POS printer width */
+              margin: 0 auto; 
+              color: #000;
+            }
+            h2 { margin: 5px 0; font-size: 24px; font-weight: 900; }
+            p { margin: 3px 0; font-size: 14px; }
+            .divider { border-top: 1px dashed #000; margin: 15px 0; }
+            .item-row { display: flex; justify-content: space-between; text-align: left; margin: 5px 0; font-size: 14px; }
+            .item-name { flex: 1; padding-right: 10px; }
+            .text-left { text-align: left; font-size: 14px; }
+            .bold { font-weight: bold; }
+            .total-row { font-size: 18px; margin-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <h2>Sip Chesey</h2>
+          <p>Prajay Megapolis, Club house</p>
+          <p>Ground Floor</p>
+          <p>Ph: 8328115682</p>
+          
+          <div class="divider"></div>
+          
+          <div class="text-left">
+            <p><span class="bold">Bill No:</span> ${orderId}</p>
+            <p><span class="bold">Date:</span> ${new Date().toLocaleString()}</p>
+            <p><span class="bold">Payment:</span> ${method.toUpperCase()}</p>
+          </div>
+          
+          <div class="divider"></div>
+          
+          ${cartItems.map(item => `
+            <div class="item-row">
+              <span class="item-name">${item.qty}x ${item.name}</span>
+              <span>Rs.${item.price * item.qty}</span>
+            </div>
+          `).join('')}
+          
+          <div class="divider"></div>
+          
+          <div class="item-row bold total-row">
+            <span>TOTAL</span>
+            <span>Rs.${total}</span>
+          </div>
+          
+          <div class="divider"></div>
+          
+          <p class="bold">Thank you for visiting!</p>
+          <p>Have a refreshing day!</p>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(receiptHtml);
+    printWindow.document.close();
+    printWindow.focus();
+
+    // Trigger the print dialog after rendering
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
+  };
+
+  // --- CHECKOUT LOGIC ---
   const handleCheckout = async () => {
     if (cart.length === 0 || !isConnected) return;
-    
-    if (!address.trim() || !attachment) {
-       setErrorMsg("Please provide delivery address and payment screenshot.");
-       return;
-    }
 
     // Safely generate sequential Order ID by checking Firebase state
     let maxId = 0;
@@ -209,8 +224,7 @@ export default function App() {
       items: cart,
       total: cartTotal,
       status: 'pending',
-      address: address,
-      refId: refId,
+      paymentMethod: paymentMethod,
       timestamp: new Date().toISOString()
     };
     
@@ -220,18 +234,12 @@ export default function App() {
     // 2. Save to Google Sheets
     await syncToSheets(newOrder, 'create');
 
-    // 3. Format WhatsApp Message
-    const waMessage = `*New Order: ${orderId}*\n\n*Delivery Address:*\n${address}\n\n*Payment Ref ID:*\n${refId}\n\n*Order Details:*\n${cart.map(i => `${i.qty}x ${i.name} (₹${i.price * i.qty})`).join('\n')}\n\n*Total:* ₹${cartTotal}`;
-    
-    // 4. Open WhatsApp Link
-    window.open(`https://wa.me/918328115683?text=${encodeURIComponent(waMessage)}`, '_blank');
+    // 3. Print the Receipt
+    printReceipt(orderId, cart, cartTotal, paymentMethod);
 
-    // 5. Reset Cart
+    // 4. Reset Cart
     setCart([]);
-    setAddress('');
-    setAttachment(null);
-    setRefId('');
-    setErrorMsg('');
+    setPaymentMethod('cash'); // Reset to default
   };
 
   const markOrderDone = async (order) => {
@@ -241,7 +249,6 @@ export default function App() {
   };
 
   return (
-    // FIXED INSET-0 ADDED HERE: This forces the app to pin to the exact edges of the screen, bypassing Vite's default CSS margins.
     <div className={`fixed inset-0 flex overflow-hidden ${ui.bg} font-sans`}>
       {/* 1. LEFT NAVIGATION - FIXED WIDTH */}
       <nav className={`w-20 flex-shrink-0 flex flex-col items-center py-6 border-r ${ui.card}`}>
@@ -408,40 +415,31 @@ export default function App() {
               
               <hr className="border-slate-200 dark:border-slate-800 my-4" />
               
+              {/* PAYMENT SELECTION */}
               <div className="space-y-4">
-                {/* Delivery Address */}
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase">Delivery Address *</label>
-                  <textarea 
-                    value={address} 
-                    onChange={e => { setAddress(e.target.value); setErrorMsg(''); }}
-                    className={`w-full mt-1 p-3 rounded-xl border outline-none resize-none text-sm ${ui.inputBg} ${isDark ? 'border-slate-700' : 'border-slate-200'}`}
-                    rows="2"
-                    placeholder="Enter full delivery address..."
-                  />
+                <label className="text-xs font-bold text-slate-500 uppercase">Payment Method</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => setPaymentMethod('cash')}
+                    className={`py-3 rounded-xl font-bold border-2 transition-all ${paymentMethod === 'cash' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}
+                  >
+                    Cash
+                  </button>
+                  <button 
+                    onClick={() => setPaymentMethod('upi')}
+                    className={`py-3 rounded-xl font-bold border-2 transition-all ${paymentMethod === 'upi' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}
+                  >
+                    UPI
+                  </button>
                 </div>
-                
-                {/* Image Upload */}
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase">Payment Screenshot *</label>
-                  <label className={`mt-1 flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${attachment ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                    {attachment ? (
-                      <div className="flex flex-col items-center">
-                        <img src={attachment} alt="Payment Proof" className="h-16 object-contain mb-2 rounded" />
-                        <span className="text-xs font-bold text-emerald-600">Image Attached (Click to change)</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center text-slate-500">
-                        <Upload size={24} className="mb-2" />
-                        <span className="text-sm font-medium">Upload Screenshot</span>
-                      </div>
-                    )}
-                  </label>
-                  
-                  {isScanning && <p className="text-xs text-blue-500 mt-2 flex items-center"><Loader2 className="animate-spin mr-1" size={12}/> Scanning for Ref ID...</p>}
-                  {refId && !isScanning && <p className="text-xs text-emerald-600 mt-2 font-bold flex items-center"><CheckCircle2 size={12} className="mr-1"/> Ref ID: {refId}</p>}
-                </div>
+
+                {/* UPI QR CODE PLACEHOLDER */}
+                {paymentMethod === 'upi' && (
+                  <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-200 bg-emerald-50/50 rounded-xl dark:border-emerald-900/50 dark:bg-emerald-900/10">
+                    <QrCode size={64} className="text-emerald-600 mb-2" />
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Scan to pay <span className="text-emerald-600 font-black">₹{cartTotal}</span></p>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -449,14 +447,16 @@ export default function App() {
         <div className="p-8 border-t space-y-4 flex-shrink-0">
           <div className="flex justify-between text-2xl font-black mb-2"><span>Total</span><span className="text-emerald-600">₹{cartTotal}</span></div>
           
-          {errorMsg && <p className="text-xs font-bold text-red-500 text-center bg-red-50 dark:bg-red-900/20 p-2 rounded-lg">{errorMsg}</p>}
-          
           <button 
-            disabled={cart.length === 0 || isScanning || !isConnected}
+            disabled={cart.length === 0 || !isConnected}
             onClick={handleCheckout}
-            className={`w-full py-5 rounded-3xl text-xl font-black shadow-xl transition-all active:scale-95 disabled:opacity-50 ${ui.accent}`}
+            className={`w-full py-5 rounded-3xl flex items-center justify-center text-xl font-black shadow-xl transition-all active:scale-95 disabled:opacity-50 ${ui.accent}`}
           >
-            {isConnected ? (isScanning ? 'SCANNING...' : 'CONTINUE TO WHATSAPP') : 'OFFLINE'}
+            {isConnected ? (
+               <>
+                 <Printer className="mr-2" size={24} /> PRINT & CHECKOUT
+               </>
+            ) : 'OFFLINE'}
           </button>
         </div>
       </aside>
