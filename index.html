@@ -1,11 +1,27 @@
 <!doctype html>
 <html lang="en">
-  <script src="https://cdn.tailwindcss.com"></script>  
-<head>
+  <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Sip-Chesey Juice Bar</title>
+    
+    <!-- Tailwind CSS MUST be inside the head tag -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+      /* This completely overrides Vite's default squished layout */
+      html, body, #root { 
+        margin: 0 !important; 
+        padding: 0 !important; 
+        width: 100vw !important; 
+        height: 100vh !important; 
+        max-width: none !important;
+        overflow: hidden; 
+        display: flex; 
+        flex-direction: column; 
+        -webkit-font-smoothing: antialiased;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
